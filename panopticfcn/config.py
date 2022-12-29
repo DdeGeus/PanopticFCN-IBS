@@ -25,6 +25,7 @@ def add_panopticfcn_config(cfg):
     cfg.MODEL.POSITION_HEAD.CONVS_DIM       = 256
     cfg.MODEL.POSITION_HEAD.NORM            = "GN"
     cfg.MODEL.POSITION_HEAD.DEFORM          = True
+
     cfg.MODEL.POSITION_HEAD.THING = CN()
     cfg.MODEL.POSITION_HEAD.THING.CENTER_TYPE    = "mass"
     cfg.MODEL.POSITION_HEAD.THING.POS_NUM        = 7
@@ -37,6 +38,7 @@ def add_panopticfcn_config(cfg):
     
     cfg.MODEL.POSITION_HEAD.STUFF = CN()
     cfg.MODEL.POSITION_HEAD.STUFF.NUM_CLASSES  = 54
+    cfg.MODEL.POSITION_HEAD.STUFF.ALL_CLASSES  = False  # this one should have priority over "WITH_THING"
     cfg.MODEL.POSITION_HEAD.STUFF.WITH_THING   = True
     cfg.MODEL.POSITION_HEAD.STUFF.THRES        = 0.05
 
@@ -80,6 +82,18 @@ def add_panopticfcn_config(cfg):
     cfg.MODEL.INFERENCE.COMBINE.STUFF_AREA_LIMIT = 4096
     cfg.MODEL.INFERENCE.COMBINE.INST_THRESH      = 0.2
 
+    cfg.DATASETS.NAME = "COCO"
+    cfg.APPLY_IBS = False
+    cfg.IBS_WEIGHT = 1.
 
+    cfg.INPUT.CROP.MINIMUM_INST_AREA = 0
+    cfg.INPUT.NEW_SAMPLING = False
+    cfg.INPUT.NEW_SAMPLING_SCALES = [32, 64, 128, 256, 512]
+    cfg.INPUT.NEW_SAMPLING_APPLY_SCALING = True
+    cfg.INPUT.NEW_SAMPLING_SCALE_MIN = 1024
+    cfg.INPUT.NEW_SAMPLING_SCALE_MAX = 6192
+    cfg.INPUT.NEW_SAMPLING_OVERALL_MAX = 9288
 
-
+    cfg.SAVE_PREDICTIONS = True
+    cfg.SAVE_DIR = "predictions"
+    cfg.SAVE_DIR_NAME = ""

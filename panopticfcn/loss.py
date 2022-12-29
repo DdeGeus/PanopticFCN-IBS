@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-__all__ = ['sigmoid_focal_loss', 'weighted_dice_loss']
+__all__ = ['sigmoid_focal_loss', 'weighted_dice_loss', 'weighted_focal_loss']
 
 
 def weighted_dice_loss(
@@ -72,6 +72,86 @@ def weighted_dice_loss(
     return loss
 
 
+def weighted_focal_loss(
+    prediction,
+    target_seg,
+    gt_num,
+    index_mask,
+    instance_num: int = 0,
+    weighted_val: float = 1.0,
+    weighted_num: int = 1,
+    mode: str = "thing",
+    reduction: str = "sum",
+    eps: float = 1e-8,
+):
+    """
+    Weighted version of Dice Loss used in PanopticFCN for multi-positive optimization.
+
+    Args:
+        prediction: prediction for Things or Stuff,
+        target_seg: segmentation target for Things or Stuff,
+        gt_num: ground truth number for Things or Stuff,
+        index_mask: positive index mask for Things or Stuff,
+        instance_num: instance number of Things or Stuff,
+        weighted_val: values of k positives,
+        weighted_num: number k for weighted loss,
+        mode: used for things or stuff,
+        reduction: 'none' | 'mean' | 'sum'
+                   'none': No reduction will be applied to the output.
+                   'mean': The output will be averaged.
+                   'sum' : The output will be summed.
+        eps: the minimum eps,
+    """
+    # avoid Nan
+    if gt_num == 0:
+        loss = prediction[0][0].sigmoid().mean() + eps
+        return loss * gt_num
+
+    n, _, h, w = target_seg.shape
+    if mode == "thing":
+        prediction = prediction.reshape(n, instance_num, weighted_num, h, w)
+        prediction = prediction.reshape(-1, weighted_num, h, w)[index_mask, ...]
+        # Reshape targets from [Nb, N_inst, H, W] to [Nb, N_inst, K, H, W]
+        # Because there are K predictions per GT as
+        target_seg = target_seg.unsqueeze(2).expand(n, instance_num, weighted_num, h, w)
+        target_seg = target_seg.reshape(-1, weighted_num, h, w)[index_mask, ...]
+        weighted_val = weighted_val.reshape(-1, weighted_num)[index_mask, ...]
+        weighted_val = weighted_val / torch.clamp(weighted_val.sum(dim=-1, keepdim=True), min=eps)
+        prediction = prediction.reshape(int(gt_num), weighted_num, h * w)
+        target_seg = target_seg.reshape(int(gt_num), weighted_num, h * w)
+    elif mode == "stuff":
+        prediction = prediction.reshape(-1, h, w)[index_mask, ...]
+        target_seg = target_seg.reshape(-1, h, w)[index_mask, ...]
+        prediction = prediction.reshape(int(gt_num), h * w)
+        target_seg = target_seg.reshape(int(gt_num), h * w)
+    else:
+        raise ValueError
+
+    p = torch.sigmoid(prediction)
+    ce_loss = F.binary_cross_entropy_with_logits(
+        prediction, target_seg, reduction="none"
+    )
+
+    alpha = 0.25
+    gamma = 2.
+
+    p_t = p * target_seg + (1 - p) * (1 - target_seg)
+    loss = ce_loss * ((1 - p_t) ** gamma)
+
+    if alpha >= 0:
+        alpha_t = alpha * target_seg + (1 - alpha) * (1 - target_seg)
+        loss = alpha_t * loss
+
+    loss = loss.mean(dim=-1)
+    loss = loss * weighted_val
+
+    if reduction == "sum":
+        loss = loss.sum()
+    elif reduction == "mean":
+        loss = loss.mean()
+    return loss
+
+
 def sigmoid_focal_loss(
     inputs,
     targets,
@@ -113,8 +193,11 @@ def sigmoid_focal_loss(
 
     # pixel-wise loss for stuff
     if mode == "stuff":
+        # Reshape to [Nb, N_st, H*W], then take mean of all pixels
+        # shape of loss: [Nb, N_st]
         loss = loss.reshape(*loss.shape[:2], -1).mean(dim=-1)
 
+    # For things, shape of loss: [Nb, N_inst, H, W]
     if reduction == "mean":
         loss = loss.mean()
     elif reduction == "sum":

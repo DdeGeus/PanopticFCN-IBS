@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import numpy as np
+
 from detectron2.layers import Conv2d, get_norm
 from .deform_conv_with_off import ModulatedDeformConvWithOff
 
@@ -68,7 +70,7 @@ class PositionHead(nn.Module):
         coord           = cfg.MODEL.POSITION_HEAD.COORD
         norm            = cfg.MODEL.POSITION_HEAD.NORM
 
-        self.position_head = SingleHead(in_channel+2 if coord else in_channel, 
+        self.position_head = SingleHead(in_channel+2 if coord else in_channel,
                                         conv_dims, 
                                         num_convs, 
                                         deform=deform,
@@ -102,7 +104,7 @@ class KernelHead(nn.Module):
         coord           = cfg.MODEL.KERNEL_HEAD.COORD
         norm            = cfg.MODEL.KERNEL_HEAD.NORM
 
-        self.kernel_head = SingleHead(in_channel+2 if coord else in_channel, 
+        self.kernel_head = SingleHead(in_channel+2 if coord else in_channel,
                                       conv_dims,
                                       num_convs,
                                       deform=deform,
@@ -132,8 +134,8 @@ class FeatureEncoder(nn.Module):
         deform          = cfg.MODEL.FEATURE_ENCODER.DEFORM
         coord           = cfg.MODEL.FEATURE_ENCODER.COORD
         norm            = cfg.MODEL.FEATURE_ENCODER.NORM
-        
-        self.encode_head = SingleHead(in_channel+2 if coord else in_channel, 
+
+        self.encode_head = SingleHead(in_channel+2 if coord else in_channel,
                                       conv_dims, 
                                       num_convs, 
                                       deform=deform,
@@ -157,6 +159,8 @@ class ThingGenerator(nn.Module):
         self.sim_type   = cfg.MODEL.INFERENCE.SIMILAR_TYPE
         self.sim_thres  = cfg.MODEL.INFERENCE.SIMILAR_THRES
         self.class_spec = cfg.MODEL.INFERENCE.CLASS_SPECIFIC
+        self.apply_ibs = cfg.APPLY_IBS
+        self.apply_new_sampling = cfg.INPUT.NEW_SAMPLING
 
         self.embed_extractor = Conv2d(input_channels, conv_dims, kernel_size=1)
         for layer in [self.embed_extractor]:
@@ -172,8 +176,38 @@ class ThingGenerator(nn.Module):
             meta_weight = meta_weight.permute(0, 2, 1)
             if not self.training:
                 meta_weight, pred_cate, pred_score = self.kernel_fusion(meta_weight, pred_cate, pred_score)
+
             inst_pred = torch.matmul(meta_weight, x)
-            inst_pred = inst_pred.reshape(n, -1, h, w)
+
+            num_imgs = 0
+            if self.training and self.apply_ibs:
+                num_imgs = 1
+                random_select = np.zeros((num_imgs, n))
+
+                def get_sample(a):
+                    if a % 2 == 0:
+                        b = (a // 2) * 2 + 1
+                    else:
+                        b = (a // 2) * 2
+                    return b
+
+                for i in range(n):
+                    if self.apply_new_sampling:
+                        random_select[:, i] = get_sample(i)
+                    else:
+                        random_select[:, i] = np.random.choice(np.delete(np.arange(n), i),
+                                                               num_imgs,
+                                                               replace=False)
+
+                random_select = np.reshape(random_select, -1)
+                feats_ibs = x[random_select]
+                meta_weight = meta_weight.repeat(num_imgs, 1, 1)
+
+                inst_pred_extra = torch.matmul(meta_weight, feats_ibs)
+                inst_pred = torch.cat([inst_pred, inst_pred_extra], dim=0)
+
+            inst_pred = inst_pred.reshape(n*(1+num_imgs), -1, h, w)
+
             return inst_pred, [pred_cate, pred_score]
         else:
             return [], [None, None]

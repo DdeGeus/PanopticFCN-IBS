@@ -2,11 +2,17 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from PIL import Image
+import numpy as np
+import json
+import os
+
+from detectron2.data import MetadataCatalog
 from detectron2.structures import ImageList, Instances, BitMasks
 from detectron2.modeling.meta_arch.build import META_ARCH_REGISTRY
 
 from .gt_generate import GenerateGT
-from .loss import sigmoid_focal_loss, weighted_dice_loss
+from .loss import sigmoid_focal_loss, weighted_dice_loss, weighted_focal_loss
 from .head import build_position_head, build_kernel_head, build_feature_encoder, build_thing_generator, build_stuff_generator
 from .backbone_utils import build_semanticfpn, build_backbone
 from .utils import topk_score, multi_apply
@@ -56,9 +62,19 @@ class PanopticFCN(nn.Module):
         self.stuff_generator       = build_stuff_generator(cfg)
         self.get_ground_truth      = GenerateGT(cfg)
 
+        self.apply_ibs = cfg.APPLY_IBS
+        self.ibs_weight = cfg.IBS_WEIGHT
+
+        self.save_predictions = cfg.SAVE_PREDICTIONS
+        self.save_dir = cfg.SAVE_DIR
+        self.save_dir_name = cfg.SAVE_DIR_NAME
+
         pixel_mean = torch.Tensor(cfg.MODEL.PIXEL_MEAN).to(self.device).view(3, 1, 1)
         pixel_std = torch.Tensor(cfg.MODEL.PIXEL_STD).to(self.device).view(3, 1, 1)
         self.normalizer = lambda x: (x - pixel_mean) / pixel_std
+
+        dataset_names = self.cfg.DATASETS.TRAIN
+        self.meta = MetadataCatalog.get(dataset_names[0])
 
         self.to(self.device)
 
@@ -84,6 +100,13 @@ class PanopticFCN(nn.Module):
                   See the return value of
                   :func:`combine_thing_and_stuff` for its format.
         """
+        if self.training and self.cfg.INPUT.NEW_SAMPLING:
+            batched_inputs_new = list()
+            for x in batched_inputs:
+                for i in range(2):
+                    batched_inputs_new.append(x[i])
+            batched_inputs = batched_inputs_new
+
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [self.normalizer(x) for x in images]
         images = ImageList.from_tensors(images, self.backbone.size_divisibility)
@@ -164,14 +187,32 @@ class PanopticFCN(nn.Module):
         thing_gt_num = int(thing_gt_idx.sum())
         thing_gt = [_gt[:,:thing_nums[_idx],...] for _idx, _gt in enumerate(gt_dict["inst"])]
         thing_gt = torch.cat(thing_gt, dim=1)
-        loss_thing = weighted_dice_loss(thing_pred, thing_gt, 
+
+        if self.apply_ibs:
+                n_batch = thing_gt.shape[0]
+                thing_pred_ibs = thing_pred[n_batch:]
+                thing_pred = thing_pred[:n_batch]
+                thing_gt_ibs = torch.zeros_like(thing_gt).to(thing_gt.device)
+
+                loss_thing_ibs = weighted_focal_loss(thing_pred_ibs,
+                                                         thing_gt_ibs,
+                                                         gt_num=thing_gt_num,
+                                                         index_mask=thing_gt_idx,
+                                                         instance_num=thing_num,
+                                                         weighted_val=weighted_values,
+                                                         weighted_num=self.weighted_num,
+                                                         mode="thing",
+                                                         reduction="sum")
+
+
+        loss_thing = weighted_dice_loss(thing_pred, thing_gt,
                                         gt_num=thing_gt_num,
                                         index_mask=thing_gt_idx,
                                         instance_num=thing_num,
                                         weighted_val=weighted_values,
                                         weighted_num=self.weighted_num,
                                         mode="thing",
-                                        reduction="sum")        
+                                        reduction="sum")
         # for stuff
         stuff_gt_idx = [_gt[:,:stuff_nums[_idx]] for _idx, _gt in enumerate(gt_dict["sem_index"])]
         stuff_gt_idx = torch.cat(stuff_gt_idx, dim=1)
@@ -195,6 +236,8 @@ class PanopticFCN(nn.Module):
         # segmentation loss
         loss["loss_seg_th"] = self.seg_weight * loss_thing / max(thing_gt_num, 1)
         loss["loss_seg_st"] = self.seg_weight * loss_stuff / max(stuff_gt_num, 1)
+        if self.apply_ibs:
+            loss["loss_ibs_th"] = self.seg_weight * self.ibs_weight * loss_thing_ibs / max(thing_gt_num, 1)
 
         return loss
 
@@ -304,8 +347,9 @@ class PanopticFCN(nn.Module):
         idx_feat_st = pred_st_mask * pred_weights.unsqueeze(1)
         idx_feat_st = idx_feat_st.reshape(-1, *weight_shape[-3:])
         idx_feat_st = F.adaptive_avg_pool2d(idx_feat_st, output_size=1)
-        if not self.sem_with_thing:
-            class_st += 1
+        if not self.cfg.MODEL.POSITION_HEAD.STUFF.ALL_CLASSES:
+            if not self.sem_with_thing:
+                class_st += 1
 
         return idx_feat_th, class_th, score_th, thing_num, idx_feat_st, score_st, class_st, stuff_num
     
@@ -387,7 +431,7 @@ class PanopticFCN(nn.Module):
                             class_ths, score_ths, pred_thing, img_shape, ori_shape)                
             else:
                 pred_mask, class_ths, score_ths = None, None, None
-            if self.sem_with_thing:
+            if self.sem_with_thing or self.cfg.MODEL.POSITION_HEAD.STUFF.ALL_CLASSES:
                 sem_classes = self.sem_classes
             else:
                 sem_classes = self.sem_classes + 1
@@ -407,6 +451,30 @@ class PanopticFCN(nn.Module):
                     self.panoptic_stuff_limit,
                     self.panoptic_inst_thrs)
                 processed_results[-1]["panoptic_seg"] = result_panoptic
+
+                if self.save_predictions:
+                    panoptic_pred = result_panoptic[0]
+                    segments_info = result_panoptic[1]
+
+                    segm_info = segments_info.copy()
+
+                    # For merging and processing, map to dataset ids
+                    for segment in segm_info:
+                        segment['category_id'] = self.meta.contiguous_id_to_dataset_id[segment['category_id']]
+
+                    pred_np = panoptic_pred.detach().cpu().numpy()
+                    pred_img = Image.fromarray(pred_np.astype(np.uint8))
+                    save_dir = os.path.join(self.save_dir, self.save_dir_name)
+                    pred_img.save(os.path.join(save_dir, batch_inputs[0]['image_id'] + ".png"))
+
+                    with open(os.path.join(save_dir, batch_inputs[0]['image_id'] + ".json"), 'w') as fp:
+                        json.dump(segm_info, fp)
+
+                    dataset_id_to_contiguous_id = dict(
+                        zip(self.meta.contiguous_id_to_dataset_id.values(),
+                            self.meta.contiguous_id_to_dataset_id.keys()))
+                    for segment in segm_info:
+                        segment['category_id'] = dataset_id_to_contiguous_id[segment['category_id']]
 
         return processed_results
 
@@ -508,6 +576,7 @@ class PanopticFCN(nn.Module):
         current_segment_id = 0
         segments_info = []
         if thing_cate is not None:
+            # print("thing_cate", thing_cate)
             keep = thing_score >= inst_threshold
             if keep.sum() > 0:
                 pred_thing = pred_thing[keep]
@@ -524,19 +593,28 @@ class PanopticFCN(nn.Module):
                         _mask = _mask & (panoptic_seg == 0)
                     current_segment_id += 1
                     panoptic_seg[_mask] = current_segment_id
+                    thing_category_id = _cate.item()
+                    category_id = self.meta.thing_train_id2contiguous_id[thing_category_id]
+                    # print("category_id_th", category_id)
                     segments_info.append(
                         {
                             "id": current_segment_id,
                             "isthing": True,
                             "score": _score.item(),
-                            "category_id": _cate.item(),
+                            "category_id": category_id,
                             "instance_id": _idx,
                         })
 
         stuff_labels = torch.unique(stuff_results)
         for stuff_label in stuff_labels:
-            if stuff_label == 0:  # 0 is a special "thing" class
-                continue
+            stuff_category_id = stuff_label.item()
+            if self.cfg.MODEL.POSITION_HEAD.STUFF.WITH_THING:
+                if stuff_label == 0:  # 0 is a special "thing" class
+                    continue
+            category_id = self.meta.stuff_train_id2contiguous_id[stuff_category_id]
+            if self.cfg.MODEL.POSITION_HEAD.STUFF.ALL_CLASSES:
+                if category_id in self.meta.thing_train_id2contiguous_id.values():
+                    continue
             mask = (stuff_results == stuff_label) & (panoptic_seg == 0)
             mask_area = mask.sum()
             if mask_area < stuff_area_limit:
@@ -547,9 +625,9 @@ class PanopticFCN(nn.Module):
                 {
                     "id": current_segment_id,
                     "isthing": False,
-                    "category_id": stuff_label.item(),
+                    "category_id": category_id,
                     "area": mask_area.item(),
                 })
         return panoptic_seg, segments_info
 
-    
+

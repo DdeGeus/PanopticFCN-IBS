@@ -13,13 +13,19 @@ def topk_score(scores, K=40, score_shape=None):
     topk_scores, topk_inds = torch.topk(scores.reshape(batch, channel, -1), K)
 
     topk_inds = topk_inds % (height * width)
-    topk_ys = (topk_inds // width).float()
+    try:
+        topk_ys = torch.div(topk_inds, width, rounding_mode='floor').float()
+    except:
+        (topk_inds // width).float()
     topk_xs = (topk_inds % width).int().float()
 
     # get all topk in in a batch
     topk_score, index = torch.topk(topk_scores.reshape(batch, -1), K)
     # div by K because index is grouped by K(C x K shape)
-    topk_clses = index // K
+    try:
+        topk_clses = torch.div(index, K, rounding_mode='floor')
+    except:
+        index // K
     topk_inds = gather_feature(topk_inds.view(batch, -1, 1), index).reshape(batch, K)
     topk_ys = gather_feature(topk_ys.reshape(batch, -1, 1), index).reshape(batch, K)
     topk_xs = gather_feature(topk_xs.reshape(batch, -1, 1), index).reshape(batch, K)

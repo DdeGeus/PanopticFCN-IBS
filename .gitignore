@@ -1,4 +1,5 @@
-output
+/output/
+/predictions/
 /data/pretrained/
 
 

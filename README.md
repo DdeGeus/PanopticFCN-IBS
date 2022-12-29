@@ -1,217 +1,151 @@
-# PanopticFCN
-**Fully Convolutional Networks for Panoptic Segmentation**
+# PanopticFCN + Intra-Batch Supervision
+## [[Project page](https://ddegeus.github.io/intra-batch-supervision/)] [[Paper](#)]
 
-Yanwei Li, Hengshuang Zhao, Xiaojuan Qi, Liwei Wang, Zeming Li, Jian Sun, Jiaya Jia
+Code for 'Intra-Batch Supervision for Panoptic Segmentation on High-Resolution Images', Daan de Geus and Gijs Dubbelman, WACV 2023.
 
-[[`arXiv`](https://arxiv.org/pdf/2012.00720.pdf)] [[`BibTeX`](#CitingPanopticFCN)]
-
-<div align="center">
-  <img src="docs/panoptic_fcn.png"/>
-</div><br/>
-
-
-This project provides an implementation for the CVPR 2021 Oral paper "[Fully Convolutional Networks for Panoptic Segmentation](https://arxiv.org/pdf/2012.00720.pdf)" based on [Detectron2](https://github.com/facebookresearch/detectron2). Panoptic FCN is a conceptually simple, strong, and efﬁcient framework for panoptic segmentation, which represents and predicts foreground things and background stuff in a uniﬁed fully convolutional pipeline.
-
+This code applies Intra-Batch Supervision to [Panoptic FCN](https://arxiv.org/abs/2012.00720), and is built upon the [official Panoptic FCN code](https://github.com/dvlab-research/PanopticFCN).
 
 ## Installation
 This project is based on [Detectron2](https://github.com/facebookresearch/detectron2), which can be constructed as follows.
-* Install Detectron2 following [the instructions](https://detectron2.readthedocs.io/tutorials/install.html).
-* Setup the dataset following [the structure](https://github.com/facebookresearch/detectron2/blob/master/datasets/README.md).
-* Copy this project to `/path/to/detectron2/projects/PanopticFCN`
+* Install Detectron2 following [these instructions](https://detectron2.readthedocs.io/tutorials/install.html).
+* Create the environment variable `DETECTRON2_DATASETS`, where the datasets are stored
+* Setup the Cityscapes dataset following [this structure](https://github.com/facebookresearch/detectron2/blob/master/datasets/README.md).
+* Setup the Mapillary Vistas dataset following [this structure](https://github.com/facebookresearch/Mask2Former/blob/main/datasets/README.md).
+* Copy this project to `/path/to/detectron2/projects/PanopticFCN-IBS`, replacing `path/to/detectron2` with the path where Detectron2 is located.
+* To prepare the datasets for our crop sampling, run these two commands:
+  * `python /path/to/detectron2/projects/PanopticFCN-IBS/data/cityscapes/prepare_cityscapes_sampling.py`
+  * `python /path/to/detectron2/projects/PanopticFCN-IBS/data/mapillaryvistas/prepare_mapillary_sampling.py`
 
 ## Training
 To train a model with 8 GPUs, run:
 ```bash
 cd /path/to/detectron2
-python3 projects/PanopticFCN/train.py --config-file <config.yaml> --num-gpus 8
+python projects/PanopticFCN-IBS/train.py --config-file <config.yaml> --num-gpus 8
 ```
 
-For example, to launch PanopticFCN training (1x schedule) with ResNet-50 backbone on 8 GPUs,
+For example, to launch a training with Panoptic FCN + IBS on Cityscapes with ResNet-50 backbone on 4 GPUs,
 one should execute:
 ```bash
 cd /path/to/detectron2
-python3 projects/PanopticFCN/train.py --config-file projects/PanopticFCN/configs/PanopticFCN-R50-1x.yaml --num-gpus 8
+python projects/PanopticFCN-IBS/train.py --config-file projects/PanopticFCN-IBS/configs/cityscapes/PanopticFCN-R50-cityscapes-ibs-cropsampling.yaml --num-gpus 4
+```
+
+For example, to launch a training with Panoptic FCN + IBS on Mapillary Vistas with ResNet-50 backbone on 8 GPUs,
+one should execute:
+```bash
+cd /path/to/detectron2
+python projects/PanopticFCN-IBS/train.py --config-file projects/PanopticFCN-IBS/configs/mapillary-vistas/PanopticFCN-R50-mapillaryvistas-ibs-cropsampling.yaml --num-gpus 8
 ```
 
 ## Evaluation
-To evaluate a pre-trained model with 8 GPUs, run:
+To evaluate a pre-trained model with 4 GPUs, run:
 ```bash
 cd /path/to/detectron2
-python3 projects/PanopticFCN/train.py --config-file <config.yaml> --num-gpus 8 --eval-only MODEL.WEIGHTS /path/to/model_checkpoint
+python projects/PanopticFCN-IBS/train.py --config-file <config.yaml> --num-gpus 4 --eval-only MODEL.WEIGHTS /path/to/model_checkpoint
 ```
 
 ## Results
-We provide the results on COCO *val* set with pretrained models. *FPS* is measured on a single V100 GPU.
+Results and models on Cityscapes. Note: like for the original Panoptic FCN, there is a large variance between results of different trainings with Panoptic FCN on Cityscapes.
 
 <table><tbody>
 <!-- START TABLE -->
 <!-- TABLE HEADER -->
 <th valign="bottom">Method</th>
+<th valign="bottom">Crop sampling</th>
 <th valign="bottom">Backbone</th>
-<th valign="bottom">Sched</th>
+<th valign="bottom">Iters</th>
 <th valign="bottom">PQ</th>
-<th valign="bottom">SQ</th>
-<th valign="bottom">RQ</th>
-<th valign="bottom">AP</th>
-<th valign="bottom">mIoU</th>
-<th valign="bottom">FPS</th>
-<th valign="bottom">download</th>
+<th valign="bottom">PQ_th</th>
+<th valign="bottom">PQ_st</th>
+<th valign="bottom">Acc_th</th>
+<th valign="bottom">Prec_th</th>
+<th valign="bottom">config</th>
+<th valign="bottom">model</th>
 <!-- TABLE BODY -->
 <tr><td align="left">PanopticFCN</td>
+<td align="center">no</td>
 <td align="center">R50</td>
-<td align="center">1x</td>
-<td align="center"> 41.1 </td>
-<td align="center"> 79.8 </td>
-<td align="center"> 49.9 </td>
-<td align="center"> 32.2 </td>
-<td align="center"> 41.5 </td>
-<td align="center"> 12.4 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/1tD1A5Zwbtri5OejlIz9MLKwzOzjtIMHQ/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1NeUO9EWtkZE0M5NrEpZ8uFqOX3vQg3Lx/view?usp=sharing">metrics</a> </td>
+<td align="center">65k</td>
+<td align="center">59.5</td>
+<td align="center">52.2</td>
+<td align="center">64.8</td>
+<td align="center">81.3</td>
+<td align="center">86.8</td>
+<td align="center"><a href="configs/cityscapes/PanopticFCN-R50-cityscapes.yaml">config</a>
+<td align="center">TBD</td>
 </tr>
-<tr><td align="left">PanopticFCN-400</td>
+<tr><td align="left">PanopticFCN + IBS </td>
+<td align="center">yes</td>
 <td align="center">R50</td>
-<td align="center">3x</td>
-<td align="center"> 41.0 </td>
-<td align="center"> 81.0 </td>
-<td align="center"> 49.6 </td>
-<td align="center"> 30.7 </td>
-<td align="center"> 43.6 </td>
-<td align="center"> 22.5 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/1QBYMAznZDDX7A0Mnaq3euB23rTBzwUCf/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1QOwbA9KRIvDN8PKh10aCQhf1jpykKwbB/view?usp=sharing">metrics</a> </td>
-</tr>
-<tr><td align="left">PanopticFCN-512</td>
-<td align="center">R50</td>
-<td align="center">3x</td>
-<td align="center"> 42.3 </td>
-<td align="center"> 81.1 </td>
-<td align="center"> 51.2 </td>
-<td align="center"> 32.4 </td>
-<td align="center"> 43.2 </td>
-<td align="center"> 19.8 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/1QBYMAznZDDX7A0Mnaq3euB23rTBzwUCf/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1QOwbA9KRIvDN8PKh10aCQhf1jpykKwbB/view?usp=sharing">metrics</a> </td>
-</tr>
-<tr><td align="left">PanopticFCN-600</td>
-<td align="center">R50</td>
-<td align="center">3x</td>
-<td align="center"> 42.7 </td>
-<td align="center"> 81.2 </td>
-<td align="center"> 51.5 </td>
-<td align="center"> 33.6 </td>
-<td align="center"> 43.9 </td>
-<td align="center"> 17.5 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/1gIUxy1DJ_V91IwL5_jHQDMOIgHoWn_O1/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1OfbyJWIVfdGQ0C-JNUnXoocHXdILnIkf/view?usp=sharing">metrics</a> </td>
-</tr>
-<tr><td align="left">PanopticFCN</td>
-<td align="center">R50</td>
-<td align="center">3x</td>
-<td align="center"> 43.6 </td>
-<td align="center"> 81.4 </td>
-<td align="center"> 52.5 </td>
-<td align="center"> 34.4 </td>
-<td align="center"> 43.6 </td>
-<td align="center"> 12.8 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/18Re3keEkIiy7EVS-uFCNPBfT1BfT8Ng3/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1ACrIJ_AZCW3fD7jcipdya3-ixVBojnFO/view?usp=sharing">metrics</a></td>
-</tr>
-<tr><td align="left">PanopticFCN*</td>
-<td align="center">R50</td>
-<td align="center">3x</td>
-<td align="center"> 44.2 </td>
-<td align="center"> 81.7 </td>
-<td align="center"> 52.9 </td>
-<td align="center"> 35.6 </td>
-<td align="center"> 43.9 </td>
-<td align="center"> 9.3 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/1_VkJIhbQg9uqN49L3cDAW66zZKJE0fkI/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1uulb8PATBy1dF2VhlgQYQlo7gEdKRMK1/view?usp=sharing">metrics</a></td>
+<td align="center">65k</td>
+<td align="center">60.8</td>
+<td align="center">54.7</td>
+<td align="center">65.3</td>
+<td align="center">87.1</td>
+<td align="center">92.6</td>
+<td align="center"><a href="configs/cityscapes/PanopticFCN-R50-cityscapes-ibs-cropsampling.yaml">config</a></td>
+<td align="center">TBD</td>
 </tr>
 </tbody></table>
 
-A faster version is also provided with higher threshold but similar PQ results, which shares the same model with the corresponding normal one. This version could be suitable for you if the final panoptic results are taken into consideration only.
+Results and models on Mapillary Vistas
 
 <table><tbody>
 <!-- START TABLE -->
 <!-- TABLE HEADER -->
 <th valign="bottom">Method</th>
+<th valign="bottom">Crop sampling</th>
 <th valign="bottom">Backbone</th>
-<th valign="bottom">Sched</th>
+<th valign="bottom">Iters</th>
 <th valign="bottom">PQ</th>
-<th valign="bottom">SQ</th>
-<th valign="bottom">RQ</th>
-<th valign="bottom">AP</th>
-<th valign="bottom">mIoU</th>
-<th valign="bottom">FPS</th>
-<th valign="bottom">download</th>
+<th valign="bottom">PQ_th</th>
+<th valign="bottom">PQ_st</th>
+<th valign="bottom">Acc_th</th>
+<th valign="bottom">Prec_th</th>
+<th valign="bottom">config</th>
+<th valign="bottom">model</th>
 <!-- TABLE BODY -->
 <tr><td align="left">PanopticFCN</td>
+<td align="center">no</td>
 <td align="center">R50</td>
-<td align="center">1x</td>
-<td align="center"> 41.1 </td>
-<td align="center"> 79.8 </td>
-<td align="center"> 49.9 </td>
-<td align="center"> 30.2 </td>
-<td align="center"> 41.4 </td>
-<td align="center"> 13.6 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/1tD1A5Zwbtri5OejlIz9MLKwzOzjtIMHQ/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1NeUO9EWtkZE0M5NrEpZ8uFqOX3vQg3Lx/view?usp=sharing">metrics</a> </td>
+<td align="center">150k</td>
+<td align="center">35.5</td>
+<td align="center">31.8</td>
+<td align="center">40.3</td>
+<td align="center">74.7</td>
+<td align="center">77.9</td>
+<td align="center"><a href="configs/mapillary-vistas/PanopticFCN-R50-mapillaryvistas.yaml">config</a>
+<td align="center">TBD</td>
 </tr>
-<tr><td align="left">PanopticFCN-400</td>
+<tr><td align="left">PanopticFCN + IBS </td>
+<td align="center">yes</td>
 <td align="center">R50</td>
-<td align="center">3x</td>
-<td align="center"> 40.8 </td>
-<td align="center"> 81.1 </td>
-<td align="center"> 49.4 </td>
-<td align="center"> 28.9 </td>
-<td align="center"> 43.5 </td>
-<td align="center"> 26.1 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/1QBYMAznZDDX7A0Mnaq3euB23rTBzwUCf/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1QOwbA9KRIvDN8PKh10aCQhf1jpykKwbB/view?usp=sharing">metrics</a> </td>
-</tr>
-<tr><td align="left">PanopticFCN-512</td>
-<td align="center">R50</td>
-<td align="center">3x</td>
-<td align="center"> 42.3 </td>
-<td align="center"> 81.1 </td>
-<td align="center"> 51.2 </td>
-<td align="center"> 30.7 </td>
-<td align="center"> 43.2 </td>
-<td align="center"> 22.0 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/1QBYMAznZDDX7A0Mnaq3euB23rTBzwUCf/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1QOwbA9KRIvDN8PKh10aCQhf1jpykKwbB/view?usp=sharing">metrics</a> </td>
-</tr>
-<tr><td align="left">PanopticFCN-600</td>
-<td align="center">R50</td>
-<td align="center">3x</td>
-<td align="center"> 42.7 </td>
-<td align="center"> 80.8 </td>
-<td align="center"> 51.4 </td>
-<td align="center"> 31.6 </td>
-<td align="center"> 43.9 </td>
-<td align="center"> 19.1 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/1gIUxy1DJ_V91IwL5_jHQDMOIgHoWn_O1/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1OfbyJWIVfdGQ0C-JNUnXoocHXdILnIkf/view?usp=sharing">metrics</a> </td>
-</tr>
-<tr><td align="left">PanopticFCN</td>
-<td align="center">R50</td>
-<td align="center">3x</td>
-<td align="center"> 43.6 </td>
-<td align="center"> 81.4 </td>
-<td align="center"> 52.5 </td>
-<td align="center"> 32.4 </td>
-<td align="center"> 43.6 </td>
-<td align="center"> 13.5 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/18Re3keEkIiy7EVS-uFCNPBfT1BfT8Ng3/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1ACrIJ_AZCW3fD7jcipdya3-ixVBojnFO/view?usp=sharing">metrics</a> </td>
-</tr>
-<tr><td align="left">PanopticFCN*</td>
-<td align="center">R50</td>
-<td align="center">3x</td>
-<td align="center"> 44.2 </td>
-<td align="center"> 81.7 </td>
-<td align="center"> 52.9 </td>
-<td align="center"> 33.4 </td>
-<td align="center"> 43.9 </td>
-<td align="center"> 9.7 </td>
-<td align="center"> <a href="https://drive.google.com/file/d/1_VkJIhbQg9uqN49L3cDAW66zZKJE0fkI/view?usp=sharing">model</a>&nbsp;|&nbsp;<a href="https://drive.google.com/file/d/1uulb8PATBy1dF2VhlgQYQlo7gEdKRMK1/view?usp=sharing">metrics</a> </td>
+<td align="center">150k</td>
+<td align="center">36.3</td>
+<td align="center">33.6</td>
+<td align="center">40.0</td>
+<td align="center">77.0</td>
+<td align="center">82.2</td>
+<td align="center"><a href="configs/mapillary-vistas/PanopticFCN-R50-mapillaryvistas-ibs-cropsampling.yaml">config</a></td>
+<td align="center">TBD</td>
 </tr>
 </tbody></table>
 
-## <a name="CitingPanopticFCN"></a>Citing PanopticFCN
+## <a name="Citing"></a>Citing us
 
-Consider cite PanopticFCN in your publications if it helps your research.
+Please consider citing our work if it is useful for your research.
+
+```
+@inproceedings{degeus2023ibs,
+  title={Intra-Batch Supervision for Panoptic Segmentation on High-Resolution Images},
+  author={{de Geus}, Daan and Dubbelman, Gijs},
+  booktitle={IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+  year={2023}
+}
+```
+
+
+Also consider citing the original Panoptic FCN paper.
 
 ```
 @inproceedings{li2021panopticfcn,
@@ -219,14 +153,5 @@ Consider cite PanopticFCN in your publications if it helps your research.
   author={Yanwei Li, Hengshuang Zhao, Xiaojuan Qi, Liwei Wang, Zeming Li, Jian Sun, and Jiaya Jia},
   booktitle={IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
   year={2021}
-}
-```
-Consider cite this project in your publications if it helps your research. 
-```
-@misc{PanopticFCN,
-    author = {Yanwei Li},
-    title = {PanopticFCN},
-    howpublished = {\url{https://github.com/yanwei-li/PanopticFCN}},
-    year ={2021}
 }
 ```

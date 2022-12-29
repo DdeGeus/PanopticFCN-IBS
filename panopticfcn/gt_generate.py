@@ -17,6 +17,7 @@ class GenerateGT(object):
         self.thing_classes = cfg.MODEL.POSITION_HEAD.THING.NUM_CLASSES
         self.stuff_classes = cfg.MODEL.POSITION_HEAD.STUFF.NUM_CLASSES
         self.sem_with_thing = cfg.MODEL.POSITION_HEAD.STUFF.WITH_THING
+        self.sem_all_classes = cfg.MODEL.POSITION_HEAD.STUFF.ALL_CLASSES
         self.min_overlap = cfg.MODEL.POSITION_HEAD.THING.MIN_OVERLAP
         self.instance_scales = cfg.MODEL.KERNEL_HEAD.INSTANCE_SCALES
         self.gaussian_sigma = cfg.MODEL.POSITION_HEAD.THING.GAUSSIAN_SIGMA
@@ -33,7 +34,7 @@ class GenerateGT(object):
 
         # gt for stuff
         gt_sem = gt_semantics.to(dtype=torch.int64, device=self.device)
-        if self.sem_with_thing:
+        if self.sem_with_thing or self.sem_all_classes:
             gt_sem[gt_sem==self.ignore_val] = self.stuff_classes
         else:
             gt_sem[gt_sem==self.ignore_val] = 0
@@ -172,12 +173,12 @@ class GenerateGT(object):
         """
         Generate ground truth of multi-stages according to the input.
         """
-        try:
-            gt_instances = [x["instances"] for x in batched_input]
-            with_object = True
-        except:
-            gt_instances = [{}]
-            with_object = False
+        gt_instances = []
+        for x in batched_input:
+            try:
+                gt_instances.append(x['instances'])
+            except:
+                gt_instances.append({})
 
         gt_semantics = [x["sem_seg"] for x in batched_input]
         feat_shape = [x.shape[-2:] for x in features]
@@ -202,17 +203,17 @@ class GenerateGT(object):
             gt_labels_sem.append(torch.stack(_sem_labels, dim=0))
             gt_mask_sem.append(torch.stack(_masks_sem, dim=0))
             gt_index_sem.append(torch.stack(_indexes_sem, dim=0))
-            if with_object:
-                _centers = [x[_idx] for x in gt_center_labels]
-                _insts = [x[_idx] for x in gt_inst_labels]
-                _indexes = [x[_idx] for x in gt_index_labels]
-                _masks = [x[_idx] for x in index_mask_labels]
-                _classes = [x[_idx] for x in gt_class_labels]
-                gt_centers.append(torch.stack(_centers, dim=0))
-                gt_insts.append(torch.stack(_insts, dim=0))
-                gt_indexes.append(torch.stack(_indexes, dim=0))
-                index_masks.append(torch.stack(_masks, dim=0))
-                gt_classes.append(torch.stack(_classes, dim=0))
+
+            _centers = [x[_idx] for x in gt_center_labels]
+            _insts = [x[_idx] for x in gt_inst_labels]
+            _indexes = [x[_idx] for x in gt_index_labels]
+            _masks = [x[_idx] for x in index_mask_labels]
+            _classes = [x[_idx] for x in gt_class_labels]
+            gt_centers.append(torch.stack(_centers, dim=0))
+            gt_insts.append(torch.stack(_insts, dim=0))
+            gt_indexes.append(torch.stack(_indexes, dim=0))
+            index_masks.append(torch.stack(_masks, dim=0))
+            gt_classes.append(torch.stack(_classes, dim=0))
         
         gt_dict = {
             "center": gt_centers,
@@ -221,8 +222,8 @@ class GenerateGT(object):
             "index_mask": index_masks,
             "class": gt_classes,
             "sem_scores": gt_scores_sem,
-            "sem_labels":gt_labels_sem,
-            "sem_masks":gt_mask_sem,
+            "sem_labels": gt_labels_sem,
+            "sem_masks": gt_mask_sem,
             "sem_index": gt_index_sem,
         }
         return gt_dict
