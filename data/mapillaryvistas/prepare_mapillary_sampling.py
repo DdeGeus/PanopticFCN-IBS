@@ -14,7 +14,7 @@ def find_id_in_fn_list(fn_list, image_id):
   raise FileNotFoundError('ID {} not found in fn_list'.format(image_id))
 
 
-def prepare_data(panoptic_json, output_fn, images_dir, panoptic_dir, semantic_dir, output_json_dir):
+def prepare_data(panoptic_json, output_fn, images_dir, panoptic_dir, output_json_dir):
   with open(panoptic_json, 'r') as fp:
     panoptic_dict = json.load(fp)
 
@@ -24,7 +24,6 @@ def prepare_data(panoptic_json, output_fn, images_dir, panoptic_dir, semantic_di
     os.mkdir(output_json_dir)
   images_fn_list = glob(images_dir)
   pan_seg_fn_list = glob(panoptic_dir)
-  sem_seg_fn_list = glob(semantic_dir)
 
   images_per_class = dict()
   for anno in tqdm(annotations):
@@ -48,12 +47,10 @@ def prepare_data(panoptic_json, output_fn, images_dir, panoptic_dir, semantic_di
 
     file_name = find_id_in_fn_list(images_fn_list, image_id)
     pan_seg_file_name = find_id_in_fn_list(pan_seg_fn_list, image_id)
-    sem_seg_file_name = find_id_in_fn_list(sem_seg_fn_list, image_id)
 
     out_per_img = {
       "file_name": file_name,
       "image_id": image_id,
-      "sem_seg_file_name": sem_seg_file_name,
       "pan_seg_file_name": pan_seg_file_name,
       "segments_info": segments_info,
     }
@@ -84,11 +81,9 @@ if __name__ == "__main__":
 
   images_dir = os.path.join(data_dir, "mapillary-vistas", "training/images/*")
   panoptic_dir = os.path.join(data_dir, "mapillary-vistas", "training/panoptic/*")
-  semantic_dir = os.path.join(data_dir, "mapillary-vistas", "training/panoptic_proc/*")
 
   prepare_data(panoptic_json,
                output_fn,
                images_dir,
                panoptic_dir,
-               semantic_dir,
                output_json_dir)

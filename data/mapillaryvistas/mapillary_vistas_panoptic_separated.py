@@ -83,23 +83,16 @@ def load_mapillary_vistas_panoptic(image_dir, gt_dir, gt_json, meta):
     ret = []
 
     for image_file, label_file, segments_info in files:
-        # sem_label_file = (
-        #     image_file.replace("images", "panoptic_proc").split(".")[0] + ".png"
-        # )
         segments_info = [_convert_category_id(x, meta) for x in segments_info]
         ret.append(
             {
                 "file_name": image_file,
                 "image_id": os.path.basename(image_file).replace(".jpg",""),
-                # "sem_seg_file_name": sem_label_file,
                 "pan_seg_file_name": label_file,
                 "segments_info": segments_info,
             }
         )
     assert len(ret), f"No images found in {image_dir}!"
-    # assert PathManager.isfile(
-    #     ret[0]["sem_seg_file_name"]
-    # ), "Please generate labelTrainIds.png with cityscapesscripts/preparation/createTrainIdLabelImgs.py"  # noqa
     assert PathManager.isfile(
         ret[0]["pan_seg_file_name"]
     ), "Please generate panoptic annotation with python cityscapesscripts/preparation/createPanopticImgs.py"  # noqa

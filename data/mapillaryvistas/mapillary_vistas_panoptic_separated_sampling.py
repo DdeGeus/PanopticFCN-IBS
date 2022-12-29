@@ -88,7 +88,6 @@ def load_mapillary_vistas_panoptic(image_dir, gt_dir, gt_json, meta):
             {
                 "file_name": image_file,
                 "image_id": os.path.basename(image_file).replace(".jpg",""),
-                # "sem_seg_file_name": sem_label_file,
                 "pan_seg_file_name": label_file,
                 "segments_info": segments_info,
             }
