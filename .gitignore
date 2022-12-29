@@ -1,5 +1,5 @@
 output
-configs/data/pretrained
+/data/pretrained/
 
 
 # compilation and distribution
@@ -18,4 +18,3 @@ wheels/
 .idea
 .vscode
 _darcs
-
